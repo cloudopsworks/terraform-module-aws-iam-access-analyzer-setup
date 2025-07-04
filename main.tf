@@ -28,7 +28,7 @@ resource "aws_accessanalyzer_analyzer" "this" {
 
 resource "aws_accessanalyzer_archive_rule" "this" {
   for_each      = try(var.settings.archive_rules, {})
-  rule_name     = each.value.key
+  rule_name     = each.key
   analyzer_name = aws_accessanalyzer_analyzer.this[0].analyzer_name
   dynamic "filter" {
     for_each = try(each.value.filters, [])
