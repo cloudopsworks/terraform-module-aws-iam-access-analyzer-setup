@@ -1,4 +1,4 @@
-name: Terraform Transit Gateway Module
+name: Terraform Module for AWS IAM Access Analyzer Setup
 #logo: logo/logo.jpg
 
 license: "APACHE2"
@@ -8,23 +8,97 @@ copyrights:
     url: "https://cloudops.works"
     year: "2024"
 
-github_repo: cloudopsworks/terraform-module-aws-vpc-setup
+github_repo: cloudopsworks/terraform-module-aws-iam-access-analyzer-setup
 
 description: |-
-  VPC Module for setting up transit gateway with ResourceAccessMananger support.
+  Terraform module for AWS IAM Access Analyzer setup with support for organization-wide analysis, 
+  delegated administration, and customizable archive rules. Enables security assessment of resource 
+  access across AWS accounts and organizations.
 
 # Introduction to the project
-#introduction: |-
-#  This is an introduction.
+introduction: |-
+  This Terraform module provides a comprehensive solution for setting up AWS IAM Access Analyzer
+  in your AWS environment. It supports both account-level and organization-wide analyzers, with
+  features including delegated administration setup and configurable archive rules. The module
+  helps identify resources shared with external entities and manage unused access patterns.
 
 # How to use this project
-#usage: |-
+usage: |-
+  # Terragrunt example configuration (terragrunt.hcl):
+  ```hcl
+  include "root" {
+    path = find_in_parent_folders()
+  }
+
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup.git?ref=v1.0.0"
+  }
+
+  inputs = {
+    settings = {
+      organization = {
+        enabled = true
+        delegated = true
+        account_id = "123456789012"
+      }
+      analyzer_type = "ORGANIZATION"
+      archive_rules = {
+        public_access = {
+          filters = [
+            {
+              criteria = "resourceType"
+              eq = ["AWS::S3::Bucket"]
+            }
+          ]
+        }
+      }
+    }
+  }
+  ```
 
 # Example usage
-#examples: |-
+examples: |-
+  # Account-level analyzer
+  ```yaml
+  settings:
+    analyzer_enabled: true
+    analyzer_type: "ACCOUNT"
+  ```
+
+  # Organization-wide analyzer with delegated admin
+  ```yaml
+  settings:
+    organization:
+      enabled: true
+      delegated: true
+      account_id: "123456789012"
+    analyzer_type: "ORGANIZATION"
+  ```
+
+  # Analyzer with archive rules
+  ```yaml
+  settings:
+    analyzer_enabled: true
+    archive_rules:
+      unused_access:
+        filters:
+          - criteria: "resourceType"
+            eq: ["AWS::IAM::Role"]
+          - criteria: "lastAuthenticatedTime"
+            exists: true
+  ```
 
 # How to get started quickly
-#quickstart: |-
+quickstart: |-
+  1. Add this module to your Terraform/Terragrunt configuration
+  2. Configure basic settings:
+     ```yaml
+     settings:
+       analyzer_enabled: true
+       analyzer_type: "ACCOUNT"
+     ```
+  3. Run terraform init and apply
+  4. Access the analyzer through AWS Console or API
 
 include:
   - "docs/targets.md"

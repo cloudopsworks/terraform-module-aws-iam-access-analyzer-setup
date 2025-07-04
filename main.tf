@@ -12,7 +12,7 @@ locals {
 }
 
 resource "aws_accessanalyzer_analyzer" "this" {
-  count         = var.is_hub || try(var.settings.organization.enabled, false) || try(var.settings.analyzer_enabled, false) ? 0 : 1
+  count         = var.is_hub || try(var.settings.organization.enabled, false) || try(var.settings.analyzer_enabled, false) ? 1 : 0
   analyzer_name = format("access-analyzer-%s", local.system_name_short)
   type          = try(var.settings.organization.enabled, false) ? "ORGANIZATION" : try(var.settings.analyzer_type, "ACCOUNT")
   dynamic "configuration" {
