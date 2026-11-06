@@ -3,8 +3,7 @@
   ** 
   ** This file was automatically generated. 
   ** 1) Make all changes to `README.yaml` 
-  ** 2) Run `make init` (you only need to do this once)
-  ** 3) Run`make readme` to rebuild this file. 
+  ** 2) Run `tronador readme build` to rebuild this file.
   -->
 [![README Header][readme_header_img]][readme_header_link]
 
@@ -12,12 +11,11 @@
 
 # Terraform Module for AWS IAM Access Analyzer Setup
 
+ [![Latest Release](https://img.shields.io/github/release/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup.svg?style=for-the-badge)](https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup/releases/latest) [![Last Updated](https://img.shields.io/github/last-commit/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup.svg?style=for-the-badge)](https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup/commits)
 
 
-
-Terraform module for AWS IAM Access Analyzer setup with support for organization-wide analysis, 
-delegated administration, and customizable archive rules. Enables security assessment of resource 
-access across AWS accounts and organizations.
+Terraform module for AWS IAM Access Analyzer. It creates an account or organization
+analyzer, registers a delegated administrator, and manages archive rules.
 
 
 ---
@@ -47,10 +45,20 @@ We have [*lots of terraform modules*][terraform_modules] that are Open Source an
 
 ## Introduction
 
-This Terraform module provides a comprehensive solution for setting up AWS IAM Access Analyzer
-in your AWS environment. It supports both account-level and organization-wide analyzers, with
-features including delegated administration setup and configurable archive rules. The module
-helps identify resources shared with external entities and manage unused access patterns.
+This module sets up AWS IAM Access Analyzer from a single `settings` object:
+
+| Resource | Created when |
+| --- | --- |
+| `aws_accessanalyzer_analyzer` | `is_hub`, `settings.organization.enabled`, or `settings.analyzer_enabled` is true |
+| `aws_accessanalyzer_archive_rule` | One per entry in `settings.archive_rules` |
+| `aws_organizations_delegated_administrator` | `settings.organization.delegated` is true |
+
+The analyzer type is `ORGANIZATION` when `settings.organization.enabled` is true.
+Otherwise it is `settings.analyzer_type`, which defaults to `ACCOUNT`.
+
+The analyzer is named `access-analyzer-<system_name_short>`, for example
+`access-analyzer-dev-pro-prod-001-usea1`. The short name is built from `org`,
+`spoke_def`, and the provider Region.
 
 ## Usage
 
@@ -59,81 +67,179 @@ helps identify resources shared with external entities and manage unused access 
 Instead pin to the release tag (e.g. `?ref=vX.Y.Z`) of one of our [latest releases](https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup/releases).
 
 
-# Terragrunt example configuration (terragrunt.hcl):
+Begin with the [Terragrunt scaffold](https://docs.terragrunt.com/reference/cli/commands/scaffold).
+Create and enter the target directory first, because scaffold writes `terragrunt.hcl`,
+`inputs.yaml`, and `local-tags.json` into the current directory.
+
+```sh
+# 1. Create and enter the target deployment directory
+mkdir -p <environment>/<region>/<spoke>/iam-access-analyzer
+cd <environment>/<region>/<spoke>/iam-access-analyzer
+
+# 2. Scaffold the module
+terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup
+
+# 3. Edit inputs.yaml with deployment-specific values
+vi inputs.yaml
+
+# 4. Apply
+terragrunt apply
+```
+
+Scaffold asks for `is_hub` and `tags`, then stages the generated files with `git add`.
+Releases up to and including `v1.0.4` cannot be scaffolded because of a template error,
+so use a later release.
+
+The Terragrunt hierarchy must provide these files in parent directories:
+
+| File | Level | Used for |
+| --- | --- | --- |
+| `root.hcl` | Repository root | Provider and remote state |
+| `global-inputs.yaml`, `global-tags.json` | Repository root | Global values and tags |
+| `env-inputs.yaml`, `env-tags.json` | Environment | `org` input and environment tags |
+| `region-inputs.yaml`, `region-tags.json` | Region | Region values and tags |
+| `spoke-inputs.yaml`, `spoke-tags.json` | Spoke | `spoke` (passed as `spoke_def`) and spoke tags |
+
+The generated `inputs.yaml` has one live key, `settings: {}`, and lists every option as a
+comment. Replace `{}` with the options you need. Keep the key: `terragrunt.hcl` cannot
+parse `inputs.yaml` if the file contains only comments.
+
+```yaml
+# Module configuration
+# Keep the settings key: terragrunt.hcl cannot parse this file if it contains only comments.
+settings: {} # (Optional) IAM Access Analyzer settings; replace {} with the options below. With {}, no analyzer is created unless is_hub is true. Default: {}.
+#   organization: # (Optional) Organization-level settings. Default: {}.
+#     enabled: false # (Optional) Create an ORGANIZATION analyzer; takes precedence over analyzer_type. Default: false.
+#     delegated: false # (Optional) Register account_id as delegated administrator for access-analyzer.amazonaws.com; deploy from the organization management account. Default: false.
+#     account_id: "123456789012" # (Optional) Member account ID to delegate; required when delegated is true.
+#   analyzer_enabled: false # (Optional) Create an analyzer; not needed when is_hub or organization.enabled is true. Default: false.
+#   analyzer_type: "ACCOUNT" # (Optional) Analyzer type; ignored when organization.enabled is true. Valid values: ACCOUNT, ACCOUNT_INTERNAL_ACCESS, ACCOUNT_UNUSED_ACCESS, ORGANIZATION, ORGANIZATION_INTERNAL_ACCESS, ORGANIZATION_UNUSED_ACCESS. Default: "ACCOUNT".
+#   unused_access_age: 90 # (Optional) Days without use before access is reported as unused; set only with ACCOUNT_UNUSED_ACCESS or ORGANIZATION_UNUSED_ACCESS. Default: not set.
+#   archive_rules: # (Optional) Archive rules keyed by rule name; requires an analyzer created by this deployment. Default: {}.
+#     public_buckets: # (Optional) Example rule; the key becomes the rule name.
+#       filters: # (Required) At least one filter; each filter needs criteria and one comparator.
+#         - criteria: "resourceType" # (Required) Finding attribute to match, such as resourceType, isPublic, or error.
+#           contains: ["value"] # (Optional) Contains comparator.
+#           eq: ["AWS::S3::Bucket"] # (Optional) Equals comparator.
+#           exists: true # (Optional) Exists comparator: true or false.
+#           neq: ["value"] # (Optional) Not-equals comparator.
+```
+
+The generated `terragrunt.hcl` loads `inputs.yaml` as `local.local_vars` and maps it into
+the `inputs` block. This example answered `false` to `is_hub`. Scaffold pins
+`terraform.source` to a release tag, shown here as `<release-tag>`.
+
 ```hcl
+locals {
+  local_vars  = yamldecode(file("./inputs.yaml"))
+  spoke_vars  = yamldecode(file(find_in_parent_folders("spoke-inputs.yaml")))
+  region_vars = yamldecode(file(find_in_parent_folders("region-inputs.yaml")))
+  env_vars    = yamldecode(file(find_in_parent_folders("env-inputs.yaml")))
+  global_vars = yamldecode(file(find_in_parent_folders("global-inputs.yaml")))
+
+  local_tags  = jsondecode(file("./local-tags.json"))
+  spoke_tags  = jsondecode(file(find_in_parent_folders("spoke-tags.json")))
+  region_tags = jsondecode(file(find_in_parent_folders("region-tags.json")))
+  env_tags    = jsondecode(file(find_in_parent_folders("env-tags.json")))
+  global_tags = jsondecode(file(find_in_parent_folders("global-tags.json")))
+
+  tags = merge(
+    local.global_tags,
+    local.env_tags,
+    local.region_tags,
+    local.spoke_tags,
+    local.local_tags
+  )
+}
+
 include "root" {
-  path = find_in_parent_folders()
+  path = find_in_parent_folders("root.hcl")
 }
 
 terraform {
-  source = "git::https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup.git?ref=v1.0.0"
+  source = "git::https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup.git?ref=<release-tag>"
 }
 
 inputs = {
-  settings = {
-    organization = {
-      enabled = true
-      delegated = true
-      account_id = "123456789012"
-    }
-    analyzer_type = "ORGANIZATION"
-    archive_rules = {
-      public_access = {
-        filters = [
-          {
-            criteria = "resourceType"
-            eq = ["AWS::S3::Bucket"]
-          }
-        ]
-      }
-    }
-  }
+  is_hub     = false
+  org        = local.env_vars.org
+  spoke_def  = local.spoke_vars.spoke
+  settings   = try(local.local_vars.settings, {})
+  extra_tags = local.tags
 }
 ```
 
 ## Quick Start
 
-1. Add this module to your Terraform/Terragrunt configuration
-2. Configure basic settings:
+1. Scaffold the module into a new deployment directory:
+   ```sh
+   mkdir -p <environment>/<region>/<spoke>/iam-access-analyzer
+   cd <environment>/<region>/<spoke>/iam-access-analyzer
+   terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup
+   ```
+2. Replace `settings: {}` in `inputs.yaml`:
    ```yaml
    settings:
      analyzer_enabled: true
-     analyzer_type: "ACCOUNT"
    ```
-3. Run terraform init and apply
-4. Access the analyzer through AWS Console or API
+3. Run `terragrunt apply`.
+4. Review findings in the IAM Access Analyzer console.
 
 
 ## Examples
 
-# Account-level analyzer
+All examples show the `settings` key in `inputs.yaml`.
+
+### Account analyzer
+
 ```yaml
 settings:
   analyzer_enabled: true
-  analyzer_type: "ACCOUNT"
 ```
 
-# Organization-wide analyzer with delegated admin
+### Unused access analyzer
+
+```yaml
+settings:
+  analyzer_enabled: true
+  analyzer_type: "ACCOUNT_UNUSED_ACCESS"
+  unused_access_age: 90
+```
+
+### Organization analyzer with a delegated administrator
+
+Deploy the delegation from the organization management account:
+
+```yaml
+settings:
+  organization:
+    delegated: true
+    account_id: "123456789012"
+```
+
+Then create the analyzer from the delegated administrator account:
+
 ```yaml
 settings:
   organization:
     enabled: true
-    delegated: true
-    account_id: "123456789012"
-  analyzer_type: "ORGANIZATION"
 ```
 
-# Analyzer with archive rules
+### Archive rules
+
+Each key under `archive_rules` becomes the rule name. Every filter needs `criteria` and
+one comparator.
+
 ```yaml
 settings:
   analyzer_enabled: true
   archive_rules:
-    unused_access:
+    private_buckets:
       filters:
         - criteria: "resourceType"
-          eq: ["AWS::IAM::Role"]
-        - criteria: "lastAuthenticatedTime"
-          exists: true
+          eq: ["AWS::S3::Bucket"]
+        - criteria: "isPublic"
+          eq: ["false"]
 ```
 
 
@@ -153,26 +259,26 @@ Available targets:
 ## Requirements
 
 | Name | Version |
-|------|---------|
+| ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.4 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.35 |
 
 ## Providers
 
 | Name | Version |
-|------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.4 |
+| ---- | ------- |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.35 |
 
 ## Modules
 
 | Name | Source | Version |
-|------|--------|---------|
-| <a name="module_tags"></a> [tags](#module\_tags) | cloudopsworks/tags/local | 1.0.9 |
+| ---- | ------ | ------- |
+| <a name="module_tags"></a> [tags](#module\_tags) | cloudopsworks/tags/local | 1.0.10 |
 
 ## Resources
 
 | Name | Type |
-|------|------|
+| ---- | ---- |
 | [aws_accessanalyzer_analyzer.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/accessanalyzer_analyzer) | resource |
 | [aws_accessanalyzer_archive_rule.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/accessanalyzer_archive_rule) | resource |
 | [aws_organizations_delegated_administrator.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/organizations_delegated_administrator) | resource |
@@ -181,19 +287,19 @@ Available targets:
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_extra_tags"></a> [extra\_tags](#input\_extra\_tags) | Extra tags to add to the resources | `map(string)` | `{}` | no |
 | <a name="input_is_hub"></a> [is\_hub](#input\_is\_hub) | Is this a hub or spoke configuration? | `bool` | `false` | no |
 | <a name="input_org"></a> [org](#input\_org) | Organization details | <pre>object({<br/>    organization_name = string<br/>    organization_unit = string<br/>    environment_type  = string<br/>    environment_name  = string<br/>  })</pre> | n/a | yes |
-| <a name="input_settings"></a> [settings](#input\_settings) | Settings for the IAM analyzer resources | `any` | `{}` | no |
+| <a name="input_settings"></a> [settings](#input\_settings) | (Optional) IAM Access Analyzer settings. With the default, no analyzer is created unless is\_hub is true. Default: {}. | `any` | `{}` | no |
 | <a name="input_spoke_def"></a> [spoke\_def](#input\_spoke\_def) | Spoke ID Number, must be a 3 digit number | `string` | `"001"` | no |
 
 ## Outputs
 
 | Name | Description |
-|------|-------------|
-| <a name="output_access_analyzer_id"></a> [access\_analyzer\_id](#output\_access\_analyzer\_id) | n/a |
-| <a name="output_access_analyzer_name"></a> [access\_analyzer\_name](#output\_access\_analyzer\_name) | n/a |
+| ---- | ----------- |
+| <a name="output_access_analyzer_id"></a> [access\_analyzer\_id](#output\_access\_analyzer\_id) | ID of the IAM Access Analyzer, or null when no analyzer is created. |
+| <a name="output_access_analyzer_name"></a> [access\_analyzer\_name](#output\_access\_analyzer\_name) | Name of the IAM Access Analyzer, or null when no analyzer is created. |
 
 
 
