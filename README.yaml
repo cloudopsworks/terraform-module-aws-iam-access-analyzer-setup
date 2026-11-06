@@ -29,7 +29,7 @@ introduction: |-
   | Resource | Created when |
   | --- | --- |
   | `aws_accessanalyzer_analyzer` | `is_hub`, `settings.organization.enabled`, or `settings.analyzer_enabled` is true |
-  | `aws_accessanalyzer_archive_rule` | One per entry in `settings.archive_rules` |
+  | `aws_accessanalyzer_archive_rule` | One per entry in `settings.archive_rules`; planning fails if no analyzer is created |
   | `aws_organizations_delegated_administrator` | `settings.organization.delegated` is true |
 
   The analyzer type is `ORGANIZATION` when `settings.organization.enabled` is true.
@@ -43,7 +43,9 @@ introduction: |-
 usage: |-
   Begin with the [Terragrunt scaffold](https://docs.terragrunt.com/reference/cli/commands/scaffold).
   Create and enter the target directory first, because scaffold writes `terragrunt.hcl`,
-  `inputs.yaml`, and `local-tags.json` into the current directory.
+  `inputs.yaml`, and `local-tags.json` into the current directory. The directory must be
+  inside a git repository: outside one, the `git add` hook makes scaffold exit with an
+  error after it has written the files.
 
   ```sh
   # 1. Create and enter the target deployment directory
@@ -84,19 +86,21 @@ usage: |-
   settings: {} # (Optional) IAM Access Analyzer settings; replace {} with the options below. With {}, no analyzer is created unless is_hub is true. Default: {}.
   #   organization: # (Optional) Organization-level settings. Default: {}.
   #     enabled: false # (Optional) Create an ORGANIZATION analyzer; takes precedence over analyzer_type. Default: false.
-  #     delegated: false # (Optional) Register account_id as delegated administrator for access-analyzer.amazonaws.com; deploy from the organization management account. Default: false.
+  #     delegated: false # (Optional) Register account_id as delegated administrator for access-analyzer.amazonaws.com; deploy from the organization management account after enabling trusted access for that service. Default: false.
   #     account_id: "123456789012" # (Optional) Member account ID to delegate; required when delegated is true.
   #   analyzer_enabled: false # (Optional) Create an analyzer; not needed when is_hub or organization.enabled is true. Default: false.
-  #   analyzer_type: "ACCOUNT" # (Optional) Analyzer type; ignored when organization.enabled is true. Valid values: ACCOUNT, ACCOUNT_INTERNAL_ACCESS, ACCOUNT_UNUSED_ACCESS, ORGANIZATION, ORGANIZATION_INTERNAL_ACCESS, ORGANIZATION_UNUSED_ACCESS. Default: "ACCOUNT".
-  #   unused_access_age: 90 # (Optional) Days without use before access is reported as unused; set only with ACCOUNT_UNUSED_ACCESS or ORGANIZATION_UNUSED_ACCESS. Default: not set.
+  #   analyzer_type: "ACCOUNT" # (Optional) Analyzer type; ignored when organization.enabled is true. Valid values: ACCOUNT, ACCOUNT_INTERNAL_ACCESS, ACCOUNT_UNUSED_ACCESS, ORGANIZATION, ORGANIZATION_INTERNAL_ACCESS, ORGANIZATION_UNUSED_ACCESS. *_INTERNAL_ACCESS analyzers are created without analysis rules. Default: "ACCOUNT".
+  #   unused_access_age: 90 # (Optional) Days without use before access is reported as unused. Valid values: 1-365. Set only with ACCOUNT_UNUSED_ACCESS or ORGANIZATION_UNUSED_ACCESS, leaving organization.enabled false. Default: not set.
   #   archive_rules: # (Optional) Archive rules keyed by rule name; requires an analyzer created by this deployment. Default: {}.
-  #     public_buckets: # (Optional) Example rule; the key becomes the rule name.
+  #     private_buckets: # (Optional) Example rule; the key becomes the rule name.
   #       filters: # (Required) At least one filter; each filter needs criteria and one comparator.
-  #         - criteria: "resourceType" # (Required) Finding attribute to match, such as resourceType, isPublic, or error.
-  #           contains: ["value"] # (Optional) Contains comparator.
+  #         - criteria: "resourceType" # (Required) Finding attribute to match; valid keys depend on the analyzer type, see https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-filter-keys.html
   #           eq: ["AWS::S3::Bucket"] # (Optional) Equals comparator.
-  #           exists: true # (Optional) Exists comparator: true or false.
-  #           neq: ["value"] # (Optional) Not-equals comparator.
+  #         - criteria: "isPublic" # (Required) Second filter; findings must match every filter.
+  #           eq: ["false"] # (Optional) Equals comparator.
+  #           # contains: ["value"] # (Optional) Contains comparator.
+  #           # neq: ["value"] # (Optional) Not-equals comparator.
+  #           # exists: true # (Optional) Exists comparator: true or false.
   ```
 
   The generated `terragrunt.hcl` loads `inputs.yaml` as `local.local_vars` and maps it into
@@ -131,7 +135,7 @@ usage: |-
   }
 
   terraform {
-    source = "git::https://github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup.git?ref=<release-tag>"
+    source = "github.com/cloudopsworks/terraform-module-aws-iam-access-analyzer-setup?ref=<release-tag>"
   }
 
   inputs = {
@@ -163,9 +167,19 @@ examples: |-
     unused_access_age: 90
   ```
 
+  For organization scope, set `analyzer_type` to `ORGANIZATION_UNUSED_ACCESS` and leave
+  `organization.enabled` false, because that setting forces the `ORGANIZATION` type.
+
   ### Organization analyzer with a delegated administrator
 
-  Deploy the delegation from the organization management account:
+  This module does not enable trusted access. Enable it once from the organization
+  management account:
+
+  ```sh
+  aws organizations enable-aws-service-access --service-principal access-analyzer.amazonaws.com
+  ```
+
+  Then deploy the delegation from the management account:
 
   ```yaml
   settings:
@@ -185,7 +199,8 @@ examples: |-
   ### Archive rules
 
   Each key under `archive_rules` becomes the rule name. Every filter needs `criteria` and
-  one comparator.
+  one comparator. Valid criteria depend on the analyzer type; see the
+  [filter key reference](https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-filter-keys.html).
 
   ```yaml
   settings:
