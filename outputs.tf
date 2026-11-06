@@ -8,9 +8,11 @@
 #
 
 output "access_analyzer_id" {
-  value = length(aws_accessanalyzer_analyzer.this) > 0 ? aws_accessanalyzer_analyzer.this[0].id : null
+  description = "ID of the IAM Access Analyzer, or null when no analyzer is created."
+  value       = length(aws_accessanalyzer_analyzer.this) > 0 ? aws_accessanalyzer_analyzer.this[0].id : null
 }
 
 output "access_analyzer_name" {
-  value = length(aws_accessanalyzer_analyzer.this) > 0 ? aws_accessanalyzer_analyzer.this[0].analyzer_name : null
+  description = "Name of the IAM Access Analyzer, or null when no analyzer is created."
+  value       = length(aws_accessanalyzer_analyzer.this) > 0 ? aws_accessanalyzer_analyzer.this[0].analyzer_name : null
 }
