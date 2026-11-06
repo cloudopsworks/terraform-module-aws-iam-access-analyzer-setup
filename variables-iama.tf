@@ -1,5 +1,5 @@
 ##
-# (c) 2021-2025
+# (c) 2021-2026
 #     Cloud Ops Works LLC - https://cloudops.works/
 #     Find us on:
 #       GitHub: https://github.com/cloudopsworks
@@ -7,25 +7,28 @@
 #     Distributed Under Apache v2.0 License
 #
 
-# Variables for IAM Analyzer resources
+# Variables for IAM Access Analyzer resources
 # YAML format
-#settings:
-#   organization:
-#     enabled: true | false        # (optional) Enable organization-wide IAM Analyzer
-#     delegated: true | false      # (optional) Enable delegated administrator for IAM Analyzer
-#     account_id: "123456789012"   # (optional) Account ID for delegated administrator
-#  analyzer_enabled: true | false  # (optional) Enable IAM Analyzer only on account level, supersedded if organization.enabled is true or is_hub is true
-#  analyzer_type: "ACCOUNT"      # (optional) Type of analyzer, default is ACCOUNT, possible values are ACCOUNT, ORGANIZATION, ACCOUNT_UNUSED_ACCESS, ORGANIZATION_UNUSED_ACCESS
-#  archive_rules:                # (optional) Archive rules for IAM Analyzer
-#    <rule_name>:
-#      filters:          # Filters for the archive rule, at least one filter is required
-#        - criteria: <criteria>  # Criteria for the filter
-#          contains: [<value>,...]      # (optional) Contains value for the filter
-#          eq: [<value>,...]            # (optional) Equal value for the filter
-#          exists: true | false         # (optional) Existence check for the filter
-#          neq: [<value>,...]            # (optional) Not equal value for the filter
+# settings:
+#   organization:                     # (Optional) Organization-level settings. Default: {}.
+#     enabled: false                  # (Optional) Create an ORGANIZATION analyzer; takes precedence over analyzer_type. Default: false.
+#     delegated: false                # (Optional) Register account_id as delegated administrator for access-analyzer.amazonaws.com; deploy from the organization management account after enabling trusted access for that service. Default: false.
+#     account_id: "123456789012"      # (Optional) Member account ID to delegate; required when delegated is true.
+#   analyzer_enabled: false           # (Optional) Create an analyzer; not needed when is_hub or organization.enabled is true. Default: false.
+#   analyzer_type: "ACCOUNT"          # (Optional) Analyzer type; ignored when organization.enabled is true. Valid values: ACCOUNT, ACCOUNT_INTERNAL_ACCESS, ACCOUNT_UNUSED_ACCESS, ORGANIZATION, ORGANIZATION_INTERNAL_ACCESS, ORGANIZATION_UNUSED_ACCESS. *_INTERNAL_ACCESS analyzers are created without analysis rules. Default: "ACCOUNT".
+#   unused_access_age: 90             # (Optional) Days without use before access is reported as unused. Valid values: 1-365. Set only with ACCOUNT_UNUSED_ACCESS or ORGANIZATION_UNUSED_ACCESS, leaving organization.enabled false. Default: not set.
+#   archive_rules:                    # (Optional) Archive rules keyed by rule name; requires an analyzer created by this deployment. Default: {}.
+#     private_buckets:                # (Optional) Example rule; the key becomes the rule name.
+#       filters:                      # (Required) At least one filter; each filter needs criteria and one comparator.
+#         - criteria: "resourceType"  # (Required) Finding attribute to match; valid keys depend on the analyzer type, see https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-filter-keys.html
+#           eq: ["AWS::S3::Bucket"]   # (Optional) Equals comparator.
+#         - criteria: "isPublic"      # (Required) Second filter; findings must match every filter.
+#           eq: ["false"]             # (Optional) Equals comparator.
+#           # contains: ["value"]     # (Optional) Contains comparator.
+#           # neq: ["value"]          # (Optional) Not-equals comparator.
+#           # exists: true            # (Optional) Exists comparator: true or false.
 variable "settings" {
-  description = "Settings for the IAM analyzer resources"
+  description = "(Optional) IAM Access Analyzer settings. With the default, no analyzer is created unless is_hub is true. Default: {}."
   type        = any
   default     = {}
 }
